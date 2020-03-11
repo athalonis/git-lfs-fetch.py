@@ -13,7 +13,7 @@ except ImportError:
     from urllib2 import HTTPError
     from urlparse import urlsplit, urlunsplit
 
-from .utils import force_link, ignore_missing_file, in_dir, TempDir, TempFile
+from .utils import force_link, ignore_missing_file, in_dir, TempDir, TempFile, extract_basic_auth
 
 
 MEDIA_TYPE = 'application/vnd.git-lfs+json'
@@ -44,6 +44,7 @@ def get_lfs_endpoint_url(git_repo, checkout_dir):
         url = url[:-1]
     if not url.endswith('/info/lfs'):
         url += '/info/lfs' if url.endswith('.git') else '.git/info/lfs'
+    print(url)
     url_split = urlsplit(url)
     host, path = url_split.hostname, url_split.path
     if url_split.scheme != 'https':
@@ -107,31 +108,53 @@ def find_lfs_files(checkout_dir):
         yield path.decode('ascii')
 
 
-def read_lfs_metadata(checkout_dir):
+def read_lfs_metadata(checkout_dir, whitelist):
     """Yields (path, oid, size) tuples for all files managed by Git LFS
     """
     for path in find_lfs_files(checkout_dir):
-        meta = git_show(checkout_dir, path).decode('utf8').strip().split('\n')
-        assert meta[0] == 'version https://git-lfs.github.com/spec/v1', meta
-        d = dict(line.split(' ', 1) for line in meta[1:])
-        oid = d['oid']
-        oid = oid[7:] if oid.startswith('sha256:') else oid
-        size = int(d['size'])
-        yield (path, oid, size)
 
+        # Check if whitelist was passed and if path starts with one in whitelist
+        valid_path = False
+        if whitelist is not None:
+            for wpath in whitelist:
+                if path.startswith(wpath):
+                    valid_path = True
+        else:
+            valid_path = True
+
+        if valid_path:
+            meta = git_show(checkout_dir, path).decode('utf8').strip().split('\n')
+            assert meta[0] == 'version https://git-lfs.github.com/spec/v1', meta
+            d = dict(line.split(' ', 1) for line in meta[1:])
+            oid = d['oid']
+            oid = oid[7:] if oid.startswith('sha256:') else oid
+            size = int(d['size'])
+            yield (path, oid, size)
 
 def fetch_urls(lfs_url, lfs_auth_info, oid_list):
     """Fetch the URLs of the files from the Git LFS endpoint
     """
+    print(lfs_url)
+    print(lfs_auth_info)
     objects = []
     data = json.dumps({'operation': 'download', 'objects': oid_list})
     headers = dict(POST_HEADERS)
     headers.update(lfs_auth_info)
+
+    lfs_url, credentials = extract_basic_auth(lfs_url)
+    headers.update(credentials)
+
     req = Request(lfs_url+'/objects/batch', data.encode('ascii'), headers)
+    print(data)
+    print(headers)
+    print(lfs_url + '/objects/batch')
 
     try:
+        print("preresp")
         resp = json.loads(urlopen(req).read().decode('ascii'))
+        print("postresp")
         assert 'objects' in resp, resp
+        print(objects)
         objects.extend(resp['objects'])
 
     except HTTPError as err:
@@ -151,7 +174,7 @@ def fetch_urls(lfs_url, lfs_auth_info, oid_list):
     return objects
 
 
-def fetch(git_repo, checkout_dir=None, verbose=0):
+def fetch(git_repo, checkout_dir=None, verbose=0, whitelist=None):
     """Download all the files managed by Git LFS
     """
     git_dir = git_repo+'/.git' if os.path.isdir(git_repo+'/.git') else git_repo
@@ -171,7 +194,7 @@ def fetch(git_repo, checkout_dir=None, verbose=0):
     # Read the LFS metadata
     found = False
     oid_list, lfs_files = [], {}
-    for path, oid, size in read_lfs_metadata(checkout_dir):
+    for path, oid, size in read_lfs_metadata(checkout_dir, whitelist):
         found = True
         dst = checkout_dir+'/'+path
 

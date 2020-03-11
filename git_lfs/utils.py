@@ -3,6 +3,8 @@ from __future__ import division, print_function, unicode_literals
 from contextlib import contextmanager
 import os
 import shutil
+import re
+from base64 import b64encode
 from tempfile import mkdtemp, NamedTemporaryFile
 
 
@@ -49,6 +51,23 @@ def TempFile(**kw):
         with ignore_missing_file():
             f.__exit__(None, None, None)
 
+
+def extract_basic_auth(url):
+    """Parse URL for basic auth data and return as http header and cleaned url
+    """
+
+    header = {}
+
+    m = re.match(r'(?P<protocol>http[s]?:\/\/)(?P<credentials>[^:]+:[^@]+@)?(?P<remaining>[^:]+)', url)
+
+    if m is not None:
+        if m.groupdict()["credentials"] is not None:
+            url = m.groupdict()["protocol"] + m.groupdict()["remaining"]
+            cred_bytes = bytes(m.groupdict()["credentials"][:-1], "utf-8")
+            cred = b64encode(cred_bytes).decode("ascii")
+            header = { 'Authorization' : 'Basic {}'.format(cred) }
+
+    return url, header
 
 def force_link(source, link_name):
     # WARNING not atomic
