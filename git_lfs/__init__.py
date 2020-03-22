@@ -44,7 +44,6 @@ def get_lfs_endpoint_url(git_repo, checkout_dir):
         url = url[:-1]
     if not url.endswith('/info/lfs'):
         url += '/info/lfs' if url.endswith('.git') else '.git/info/lfs'
-    print(url)
     url_split = urlsplit(url)
     host, path = url_split.hostname, url_split.path
     if url_split.scheme != 'https':
@@ -134,8 +133,6 @@ def read_lfs_metadata(checkout_dir, whitelist):
 def fetch_urls(lfs_url, lfs_auth_info, oid_list):
     """Fetch the URLs of the files from the Git LFS endpoint
     """
-    print(lfs_url)
-    print(lfs_auth_info)
     objects = []
     data = json.dumps({'operation': 'download', 'objects': oid_list})
     headers = dict(POST_HEADERS)
@@ -145,16 +142,10 @@ def fetch_urls(lfs_url, lfs_auth_info, oid_list):
     headers.update(credentials)
 
     req = Request(lfs_url+'/objects/batch', data.encode('ascii'), headers)
-    print(data)
-    print(headers)
-    print(lfs_url + '/objects/batch')
 
     try:
-        print("preresp")
         resp = json.loads(urlopen(req).read().decode('ascii'))
-        print("postresp")
         assert 'objects' in resp, resp
-        print(objects)
         objects.extend(resp['objects'])
 
     except HTTPError as err:
